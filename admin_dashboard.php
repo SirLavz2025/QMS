@@ -28,7 +28,7 @@ $attempts = $pdo->query("SELECT a.*, u.name as student_name, q.title as quiz_tit
                         <li class="nav-item"><a href="manage_quizzes.php" class="nav-link text-white"><i class="bi bi-journal-text me-2"></i> Quizzes</a></li>
                         <li class="nav-item"><a href="manage_categories.php" class="nav-link text-white"><i class="bi bi-tags me-2"></i> Categories</a></li>
                         <li class="nav-item"><a href="manage_users.php" class="nav-link text-white"><i class="bi bi-people me-2"></i> Users</a></li>
-                       <a href="faculty_chat.php" class="nav-link text-white"><i class="bi bi-chat-square-text me-2"></i> Student Chats</a>
+                       <a href="faculty_chat.php" class="nav-link text-white"><i class="bi bi-chat-square-text me-2"></i>Student Chats</a>
                     </ul>
                 </div>
                 <a href="logout.php" class="btn btn-danger w-100 mt-5"><i class="bi bi-box-arrow-right"></i> Logout</a>
