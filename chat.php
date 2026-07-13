@@ -1,8 +1,8 @@
-<?php
+ <?php
+// chat.php
 require 'db.php';
 session_start();
 
-// 1. Protection Gate: Ensure the user is actually authenticated
 if (!isset($_SESSION['user_id'])) {
     header('Location: login.php');
     exit;
@@ -11,21 +11,7 @@ if (!isset($_SESSION['user_id'])) {
 $current_user_id = $_SESSION['user_id'];
 $current_role = $_SESSION['role'];
 
-// 2. Handle Message Submission (AJAX POST fallback to Self)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['message'], $_POST['receiver_id'])) {
-    $receiver_id = intval($_POST['receiver_id']);
-    $message_text = trim($_POST['message']);
-
-    if (!empty($message_text)) {
-        $stmt = $pdo->prepare("INSERT INTO messages (sender_id, receiver_id, message_text) VALUES (?, ?, ?)");
-        $stmt->execute([$current_user_id, $receiver_id, $message_text]);
-    }
-    // Redirect to clear form variables and prevent duplicate submissions on page refresh
-    header("Location: chat.php?user_id=" . $receiver_id);
-    exit;
-}
-
-// 3. Fetch Contacts: Faculty sees all students; Students see all faculty admins
+// Fetch Contacts matching framework parameters
 if ($current_role === 'admin') {
     $contact_stmt = $pdo->prepare("SELECT id, name, role FROM users WHERE role = 'student' ORDER BY name ASC");
 } else {
@@ -34,34 +20,13 @@ if ($current_role === 'admin') {
 $contact_stmt->execute();
 $contacts = $contact_stmt->fetchAll();
 
-// 4. Fetch Conversation Logs if a contact is actively targeted/selected
 $selected_user_id = isset($_GET['user_id']) ? intval($_GET['user_id']) : null;
-$messages = [];
 $selected_user = null;
 
 if ($selected_user_id) {
-    // Confirm the selected target user profile exists
     $user_stmt = $pdo->prepare("SELECT id, name, role FROM users WHERE id = ?");
     $user_stmt->execute([$selected_user_id]);
     $selected_user = $user_stmt->fetch();
-
-    if ($selected_user) {
-        // Automatically mark unread messages coming from this user to you as read (1)
-        $update_stmt = $pdo->prepare("UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ?");
-        $update_stmt->execute([$selected_user_id, $current_user_id]);
-
-        // Fix: Using simple positional placeholders to avoid driver issues with duplicated named params
-        $msg_stmt = $pdo->prepare("
-            SELECT * FROM messages 
-            WHERE (sender_id = ? AND receiver_id = ?) 
-               OR (sender_id = ? AND receiver_id = ?) 
-            ORDER BY sent_at ASC
-        ");
-        // Pass parameters in the exact sequential order they appear in the query
-        $msg_stmt->execute([$current_user_id, $selected_user_id, $selected_user_id, $current_user_id]);
-        $messages = $msg_stmt->fetchAll();
-    }
-
 }
 ?>
 <!DOCTYPE html>
@@ -76,6 +41,7 @@ if ($selected_user_id) {
         .chat-container { height: calc(100vh - 120px); min-height: 500px; }
         .message-stream { height: calc(100vh - 250px); min-height: 350px; overflow-y: auto; }
         .contact-list { height: calc(100vh - 180px); overflow-y: auto; }
+        .unread-badge { display: none; }
     </style>
 </head>
 <body class="bg-light">
@@ -95,6 +61,7 @@ if ($selected_user_id) {
         <div class="card border-0 shadow-sm rounded-3 overflow-hidden">
             <div class="row g-0 chat-container">
                 
+                <!-- Active Directory Directory Contacts Array -->
                 <div class="col-md-4 border-end bg-white d-flex flex-column">
                     <div class="p-3 bg-light border-bottom">
                         <h6 class="fw-bold mb-0 text-dark">Active Contacts Directory</h6>
@@ -104,22 +71,27 @@ if ($selected_user_id) {
                         <?php if (count($contacts) > 0): ?>
                             <?php foreach ($contacts as $ct): ?>
                                 <a href="chat.php?user_id=<?= $ct['id']; ?>" 
-                                   class="list-group-item list-group-item-action p-3 border-bottom d-flex justify-content-between align-items-center <?= $selected_user_id === $ct['id'] ? 'bg-primary text-white active' : ''; ?>">
+                                   class="list-group-item list-group-item-action p-3 border-bottom d-flex justify-content-between align-items-center <?= $selected_user_id === $ct['id'] ? 'bg-primary text-white active' : ''; ?>"
+                                   data-contact-id="<?= $ct['id']; ?>">
                                     <div>
-                                        <h6 class="mb-0 fw-semibold"><?= htmlspecialchars($ct['name']); ?></h6>
+                                        <h6 class="mb-0 fw-semibold contact-name"><?= htmlspecialchars($ct['name']); ?></h6>
                                         <small class="<?= $selected_user_id === $ct['id'] ? 'text-white-50' : 'text-muted'; ?> text-uppercase fs-8">
                                             <?= htmlspecialchars($ct['role']); ?>
                                         </small>
                                     </div>
-                                    <i class="bi bi-chevron-right opacity-50"></i>
+                                    <div class="d-flex align-items-center gap-2">
+                                        <span class="badge bg-danger rounded-pill unread-badge" id="badge-<?= $ct['id']; ?>">0</span>
+                                        <i class="bi bi-chevron-right opacity-50"></i>
+                                    </div>
                                 </a>
                             <?php endforeach; ?>
                         <?php else: ?>
-                            <div class="p-4 text-center text-muted">No communication contacts found in the directory database table records.</div>
+                            <div class="p-4 text-center text-muted">No communication contacts found.</div>
                         <?php endif; ?>
                     </div>
                 </div>
 
+                <!-- Chat Stream Console Interface Panel Viewport Container Context -->
                 <div class="col-md-8 d-flex flex-column bg-light justify-content-between">
                     <?php if ($selected_user): ?>
                         
@@ -131,34 +103,16 @@ if ($selected_user_id) {
                             </div>
                         </div>
 
+                        <!-- Real-time dynamic asynchronous update target list structural node layout -->
                         <div class="p-4 message-stream d-flex flex-column gap-3 bg-light-subtle" id="chatStream">
-                            <?php if (count($messages) > 0): ?>
-                                <?php foreach ($messages as $m): 
-                                    $is_mine = ($m['sender_id'] == $current_user_id);
-                                ?>
-                                    <div class="d-flex <?= $is_mine ? 'justify-content-end' : 'justify-content-start'; ?>">
-                                        <div class="card border-0 px-3 py-2 shadow-sm rounded-3" 
-                                             style="max-width: 75%; <?= $is_mine ? 'background-color: #0d6efd; color: white;' : 'background-color: #ffffff; color: #212529;'; ?>">
-                                            <p class="mb-1 text-break fs-6"><?= htmlspecialchars($m['message_text']); ?></p>
-                                            <small class="d-block text-end opacity-70" style="font-size: 0.7rem;">
-                                                <?= date('h:i A', strtotime($m['sent_at'])); ?>
-                                            </small>
-                                        </div>
-                                    </div>
-                                <?php endforeach; ?>
-                            <?php else: ?>
-                                <div class="m-auto text-center text-muted py-5">
-                                    <i class="bi bi-chat-left-dots fs-1 d-block mb-2 text-secondary opacity-50"></i>
-                                    <p class="small">No messages recorded yet. Type a message below to start the conversation.</p>
-                                </div>
-                            <?php endif; ?>
+                            <!-- Injected dynamically by async scripts asset -->
                         </div>
 
                         <div class="p-3 bg-white border-top shadow-sm">
-                            <form method="POST" action="chat.php?user_id=<?= $selected_user_id; ?>">
-                                <input type="hidden" name="receiver_id" value="<?= $selected_user_id; ?>">
+                            <form id="chatForm">
+                                <input type="hidden" id="receiverId" value="<?= $selected_user_id; ?>">
                                 <div class="input-group">
-                                    <input type="text" name="message" class="form-control border-light-subtle py-2 bg-light shadow-none" 
+                                    <input type="text" id="messageText" class="form-control border-light-subtle py-2 bg-light shadow-none" 
                                            placeholder="Write a message response here..." required autocomplete="off" autofocus>
                                     <button class="btn btn-primary px-4 shadow-sm" type="submit">
                                         <i class="bi bi-send-fill"></i>
@@ -180,11 +134,129 @@ if ($selected_user_id) {
         </div>
     </div>
 
+    <!-- Live Interactivity Script Logic Layout Module Integration -->
     <script>
-        var stream = document.getElementById('chatStream');
-        if(stream) {
-            stream.scrollTop = stream.scrollHeight;
+        const currentUserId = <?= json_encode($current_user_id); ?>;
+        const selectedUserId = <?= json_encode($selected_user_id); ?>;
+        let lastMessageCount = 0;
+
+        // --- 1. REAL-TIME CHAT FETCH PIPELINE ---
+        function fetchMessages() {
+            if (!selectedUserId) return;
+
+            fetch(`chat_api.php?action=fetch_messages&user_id=${selectedUserId}`)
+                .then(res => res.json())
+                .then(messages => {
+                    const stream = document.getElementById('chatStream');
+                    if (!stream) return;
+
+                    if (messages.length === 0) {
+                        stream.innerHTML = `
+                            <div class="m-auto text-center text-muted py-5">
+                                <i class="bi bi-chat-left-dots fs-1 d-block mb-2 text-secondary opacity-50"></i>
+                                <p class="small">No messages recorded yet. Type a message below to start the conversation.</p>
+                            </div>`;
+                        return;
+                    }
+
+                    let htmlContent = '';
+                    messages.forEach(msg => {
+                        const isMine = msg.is_mine;
+                        htmlContent += `
+                            <div class="d-flex ${isMine ? 'justify-content-end' : 'justify-content-start'}">
+                                <div class="card border-0 px-3 py-2 shadow-sm rounded-3" 
+                                     style="max-width: 75%; ${isMine ? 'background-color: #0d6efd; color: white;' : 'background-color: #ffffff; color: #212529;'}">
+                                    <p class="mb-1 text-break fs-6">${escapeHtml(msg.message_text)}</p>
+                                    <small class="d-block text-end opacity-70" style="font-size: 0.7rem;">
+                                        ${msg.formatted_time}
+                                    </small>
+                                </div>
+                            </div>`;
+                    });
+
+                    stream.innerHTML = htmlContent;
+
+                    // Scroll to bottom only when new updates land natively
+                    if (messages.length > lastMessageCount) {
+                        stream.scrollTop = stream.scrollHeight;
+                        lastMessageCount = messages.length;
+                    }
+                })
+                .catch(err => console.error("Message Sync Failure: ", err));
         }
+
+        // --- 2. LIVE UNREAD NOTIFICATIONS BADGE PIPELINE ---
+        function fetchNotifications() {
+            fetch('chat_api.php?action=fetch_notifications')
+                .then(res => res.json())
+                .then(counts => {
+                    // Reset all badges first
+                    document.querySelectorAll('.unread-badge').forEach(badge => {
+                        badge.style.display = 'none';
+                        badge.textContent = '0';
+                    });
+
+                    // Set numbers matching incoming JSON keys maps objects elements values array boundaries
+                    Object.keys(counts).forEach(senderId => {
+                        // Avoid displaying unread badges for the chat user you are actively reading
+                        if (parseInt(senderId) === selectedUserId) return;
+
+                        const badge = document.getElementById(`badge-${senderId}`);
+                        if (badge && counts[senderId] > 0) {
+                            badge.textContent = counts[senderId];
+                            badge.style.display = 'inline-block';
+                        }
+                    });
+                })
+                .catch(err => console.error("Notification Sync Failure: ", err));
+        }
+
+        // --- 3. DYNAMIC AJAX MESSAGE SUBMISSION PIPELINE ---
+        const chatForm = document.getElementById('chatForm');
+        if (chatForm) {
+            chatForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const input = document.getElementById('messageText');
+                const message = input.value.trim();
+                if (!message) return;
+
+                const formData = new FormData();
+                formData.append('receiver_id', selectedUserId);
+                formData.append('message', message);
+
+                input.value = ''; // Clean input bar instantly for premium snappy feel experience
+
+                fetch('chat_api.php?action=send', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        fetchMessages(); // Pull fresh updates immediately
+                    }
+                });
+            });
+        }
+
+        // Helper function to prevent XSS injection loops during element template text insertions
+        function escapeHtml(text) {
+            return text
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // --- 4. ENGINE SYNCHRONIZATION RUNTIMES INITIALIZERS ---
+        if (selectedUserId) {
+            fetchMessages();
+            setInterval(fetchMessages, 2000); // Poll message thread update loops context parameters every 2 seconds
+        }
+        
+        fetchNotifications();
+        setInterval(fetchNotifications, 4000); // Poll unread counts metrics globally index every 4 seconds
     </script>
 </body>
 </html>
