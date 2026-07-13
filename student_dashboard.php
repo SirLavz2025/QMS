@@ -21,7 +21,7 @@ $history = $attempts->fetchAll();
             <span class="navbar-brand fw-bold"><i class="bi bi-mortarboard-fill me-2"></i>STUDENT HUB</span>
             <div>
                 <span class="text-white me-3">Hello, <?= htmlspecialchars($_SESSION['name']); ?></span>
-                <a href="student_chat.php" class="nav-link text-white"><i class="bi bi-chat-square-text me-2"></i> Contact Faculty</a>
+                <a href="student_chat.php" class="nav-link text-white"><i class="bi bi-chat-square-text me-2"></i>Contact Faculty</a>
                 <a href="logout.php" class="btn btn-sm btn-danger">Logout</a>
             </div>
         </div>
