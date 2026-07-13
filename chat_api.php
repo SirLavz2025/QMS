@@ -1,4 +1,4 @@
-<?php
+  <?php
 // chat_api.php
 require 'db.php';
 session_start();
@@ -12,7 +12,7 @@ if (!isset($_SESSION['user_id'])) {
 $current_user_id = $_SESSION['user_id'];
 $action = $_GET['action'] ?? '';
 
-// --- 1. SEND MESSAGE ---
+// --- ACTION A: SEND MESSAGE ---
 if ($action === 'send' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $receiver_id = intval($_POST['receiver_id']);
     $message_text = trim($_POST['message']);
@@ -22,21 +22,21 @@ if ($action === 'send' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([$current_user_id, $receiver_id, $message_text]);
         echo json_encode(['status' => 'success']);
     } else {
-        echo json_encode(['status' => 'error', 'message' => 'Empty text']);
+        echo json_encode(['status' => 'error', 'message' => 'Message text is empty']);
     }
     exit;
 }
 
-// --- 2. FETCH CHAT MESSAGES STREAM ---
+// --- ACTION B: FETCH CHAT STREAM ---
 if ($action === 'fetch_messages') {
     $selected_user_id = isset($_GET['user_id']) ? intval($_GET['user_id']) : null;
     
     if ($selected_user_id) {
-        // Mark coming messages as read dynamically
+        // Automatically mark incoming messages as read
         $update_stmt = $pdo->prepare("UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ?");
         $update_stmt->execute([$selected_user_id, $current_user_id]);
 
-        // Get chat logs
+        // Fetch conversation records
         $msg_stmt = $pdo->prepare("
             SELECT * FROM messages 
             WHERE (sender_id = ? AND receiver_id = ?) 
@@ -46,7 +46,6 @@ if ($action === 'fetch_messages') {
         $msg_stmt->execute([$current_user_id, $selected_user_id, $selected_user_id, $current_user_id]);
         $messages = $msg_stmt->fetchAll();
 
-        // Format dates cleanly for UI display string injection
         foreach ($messages as &$m) {
             $m['formatted_time'] = date('h:i A', strtotime($m['sent_at']));
             $m['is_mine'] = ($m['sender_id'] == $current_user_id);
@@ -58,7 +57,7 @@ if ($action === 'fetch_messages') {
     }
 }
 
-// --- 3. GET LIVE UNREAD COUNTS FOR DIRECTORY ---
+// --- ACTION C: FETCH UNREAD NOTIFICATIONS ---
 if ($action === 'fetch_notifications') {
     $noti_stmt = $pdo->prepare("
         SELECT sender_id, COUNT(*) as unread_count 
@@ -67,7 +66,7 @@ if ($action === 'fetch_notifications') {
         GROUP BY sender_id
     ");
     $noti_stmt->execute([$current_user_id]);
-    $counts = $noti_stmt->fetchAll(PDO::FETCH_KEY_PAIR); // Returns [sender_id => count]
+    $counts = $noti_stmt->fetchAll(PDO::FETCH_KEY_PAIR); // Output format: [sender_id => count]
 
     header('Content-Type: application/json');
     echo json_encode($counts ? $counts : new stdClass());
